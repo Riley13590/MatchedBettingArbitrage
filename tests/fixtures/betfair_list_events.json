@@ -1,0 +1,12 @@
+[
+  {
+    "event": {
+      "id": "31234567",
+      "name": "Arsenal v Chelsea",
+      "countryCode": "GB",
+      "timezone": "Europe/London",
+      "openDate": "2026-08-15T14:00:00.000Z"
+    },
+    "marketCount": 42
+  }
+]

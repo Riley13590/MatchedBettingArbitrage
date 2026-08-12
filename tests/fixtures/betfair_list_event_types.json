@@ -1,0 +1,5 @@
+[
+  {"eventType": {"id": "1", "name": "Soccer"}, "marketCount": 4321},
+  {"eventType": {"id": "2", "name": "Tennis"}, "marketCount": 987},
+  {"eventType": {"id": "7522", "name": "Cricket"}, "marketCount": 210}
+]

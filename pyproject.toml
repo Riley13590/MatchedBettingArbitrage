@@ -1,0 +1,67 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "marketedge"
+version = "0.1.0"
+description = "MarketEdge UK — market-data, arbitrage and value-analysis platform"
+requires-python = ">=3.12"
+dependencies = [
+    "fastapi>=0.115",
+    "uvicorn[standard]>=0.32",
+    "pydantic>=2.9",
+    "pydantic-settings>=2.6",
+    "sqlalchemy[asyncio]>=2.0",
+    "alembic>=1.13",
+    "asyncpg>=0.29",
+    "redis>=5.1",
+    "httpx>=0.27",
+    "orjson>=3.10",
+    "python-dotenv>=1.0",
+    "prometheus-client>=0.21",
+]
+
+[project.optional-dependencies]
+dev = [
+    "ruff>=0.7",
+    "mypy>=1.13",
+    "pytest>=8.3",
+    "pytest-asyncio>=0.24",
+    "pytest-cov>=5.0",
+    "hypothesis>=6.115",
+    "coverage>=7.6",
+    "pre-commit>=4.0",
+    "fakeredis>=2.26",
+]
+
+[tool.hatch.build.targets.wheel]
+packages = ["marketedge", "apps/api"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "SIM"]
+# UP042: spec section 7.1 defines enums as `class X(str, Enum)` verbatim;
+# keep that literal shape rather than switching to StrEnum.
+ignore = ["UP042"]
+
+[tool.mypy]
+python_version = "3.12"
+strict = true
+warn_unused_ignores = true
+exclude = ["tests/", "marketedge/storage/migrations/"]
+
+[[tool.mypy.overrides]]
+module = ["apps.*"]
+strict = false
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]
+pythonpath = ["."]
+
+[tool.coverage.run]
+source = ["marketedge", "apps/api"]

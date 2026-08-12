@@ -1,0 +1,98 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: marketedge
+      POSTGRES_PASSWORD: marketedge
+      POSTGRES_DB: marketedge
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U marketedge"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  migrate:
+    build:
+      context: .
+      dockerfile: docker/python.Dockerfile
+    command: alembic -c marketedge/storage/migrations/alembic.ini upgrade head
+    env_file: .env
+    environment:
+      DATABASE_URL: postgresql+asyncpg://marketedge:marketedge@postgres:5432/marketedge
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  api:
+    build:
+      context: .
+      dockerfile: docker/python.Dockerfile
+    command: uvicorn apps.api.main:app --host 0.0.0.0 --port 8000 --reload
+    env_file: .env
+    environment:
+      DATABASE_URL: postgresql+asyncpg://marketedge:marketedge@postgres:5432/marketedge
+      REDIS_URL: redis://redis:6379/0
+    ports:
+      - "8000:8000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+    volumes:
+      - ./marketedge:/app/marketedge
+      - ./apps/api:/app/apps/api
+
+  worker-ingest:
+    build:
+      context: .
+      dockerfile: docker/python.Dockerfile
+    command: python -m marketedge.ingestion.orchestrator
+    env_file: .env
+    environment:
+      DATABASE_URL: postgresql+asyncpg://marketedge:marketedge@postgres:5432/marketedge
+      REDIS_URL: redis://redis:6379/0
+      # Execution credentials are intentionally NOT injected here — see
+      # docs/adr/003-execution-isolation.md. This worker only reads market data.
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+    volumes:
+      - ./marketedge:/app/marketedge
+
+  web:
+    build:
+      context: apps/web
+      dockerfile: ../../docker/web.Dockerfile
+    command: npm run dev -- --host 0.0.0.0
+    environment:
+      VITE_API_BASE_URL: http://localhost:8000
+    ports:
+      - "5173:5173"
+    volumes:
+      - ./apps/web:/app
+      - web-node-modules:/app/node_modules
+
+volumes:
+  postgres-data:
+  web-node-modules:

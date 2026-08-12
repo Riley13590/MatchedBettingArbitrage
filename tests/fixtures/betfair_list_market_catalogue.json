@@ -1,0 +1,31 @@
+[
+  {
+    "marketId": "1.234567890",
+    "marketName": "Match Odds",
+    "totalMatched": 152340.55,
+    "runners": [
+      {"selectionId": 111111, "runnerName": "Arsenal", "sortPriority": 1},
+      {"selectionId": 222222, "runnerName": "The Draw", "sortPriority": 2},
+      {"selectionId": 333333, "runnerName": "Chelsea", "sortPriority": 3}
+    ],
+    "eventType": {"id": "1", "name": "Soccer"},
+    "competition": {"id": "10932509", "name": "English Premier League"},
+    "event": {"id": "31234567", "name": "Arsenal v Chelsea", "openDate": "2026-08-15T14:00:00.000Z"},
+    "marketStartTime": "2026-08-15T14:00:00.000Z",
+    "description": {"marketType": "MATCH_ODDS"}
+  },
+  {
+    "marketId": "1.234567891",
+    "marketName": "Over/Under 2.5 Goals",
+    "totalMatched": 44210.10,
+    "runners": [
+      {"selectionId": 444444, "runnerName": "Over 2.5 Goals", "sortPriority": 1},
+      {"selectionId": 555555, "runnerName": "Under 2.5 Goals", "sortPriority": 2}
+    ],
+    "eventType": {"id": "1", "name": "Soccer"},
+    "competition": {"id": "10932509", "name": "English Premier League"},
+    "event": {"id": "31234567", "name": "Arsenal v Chelsea", "openDate": "2026-08-15T14:00:00.000Z"},
+    "marketStartTime": "2026-08-15T14:00:00.000Z",
+    "description": {"marketType": "OVER_UNDER_25"}
+  }
+]
