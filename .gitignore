@@ -24,3 +24,4 @@ apps/web/.vite/
 *.crt
 *.key
 !marketedge/**/*.py
+*.tsbuildinfo
