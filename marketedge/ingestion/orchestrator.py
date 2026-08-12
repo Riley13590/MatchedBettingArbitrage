@@ -1,14 +1,18 @@
 """Ingestion worker entrypoint: `python -m marketedge.ingestion.orchestrator`.
 
 Wires a connector's discovery + quote methods into the storage repositories
-and `QuoteProcessor`. This module only depends on the
-`MarketDataConnector` protocol plus `marketedge.storage`/`marketedge.domain`
-— vendor-specific mapping already happened inside the connector.
+and `QuoteProcessor`. The Betfair-shaped functions in this module only
+depend on the `MarketDataConnector` protocol plus
+`marketedge.storage`/`marketedge.domain` — vendor-specific mapping already
+happened inside the connector. The odds-provider (bookmaker) connector has
+a different ingestion shape and lives in `odds_provider_ingestion.py`; both
+run concurrently as this worker's two top-level tasks.
 
-Startup with no Betfair credentials configured is a supported, non-error
-state (spec section 2.1 — "Run in observation/paper mode by default"): the
-worker logs that the connector is unconfigured, reports `connector_up=0`,
-and idles rather than crash-looping.
+Startup with no credentials configured for a given source is a supported,
+non-error state per source (spec section 2.1 — "Run in observation/paper
+mode by default"): the worker logs that the connector is unconfigured,
+reports `connector_up=0` for it, and idles that source rather than
+crash-looping — the other source keeps running independently.
 """
 
 from __future__ import annotations
@@ -23,9 +27,10 @@ from datetime import UTC, datetime, timedelta
 import redis.asyncio as redis_asyncio
 
 from marketedge.config.settings import get_settings
-from marketedge.connectors.base import TimeWindow
+from marketedge.connectors.base import MarketDataConnector, TimeWindow
 from marketedge.connectors.betfair import BetfairConnector
-from marketedge.connectors.betfair.mapper import QuoteDraft
+from marketedge.connectors.drafts import QuoteDraft
+from marketedge.ingestion import odds_provider_ingestion
 from marketedge.ingestion.heartbeat import heartbeat_loop
 from marketedge.ingestion.quote_processor import QuoteProcessor, ResolvedQuote
 from marketedge.observability.logging import configure_logging, log_event
@@ -56,7 +61,7 @@ class SelectionIndex:
         return self.by_market.get(vendor_market_id, {}).get(vendor_selection_id)
 
 
-async def discover(connector: BetfairConnector, venue_id: int) -> SelectionIndex:
+async def discover(connector: MarketDataConnector, venue_id: int) -> SelectionIndex:
     """Enumerates events/markets/selections for the configured sports and
     upserts them into the canonical schema, returning an index used to
     resolve incoming quotes to canonical selection IDs."""
@@ -83,7 +88,7 @@ async def discover(connector: BetfairConnector, venue_id: int) -> SelectionIndex
                 raw_name=event_draft.raw_name,
             )
 
-            markets = await connector.list_markets(event_draft.vendor_event_id)
+            markets = await connector.list_markets(event_draft)
             for market_draft in markets:
                 market = await market_repo.upsert(
                     event_id=event.id,
@@ -134,14 +139,14 @@ async def _handle_quote_draft(
 
 
 async def run_streaming(
-    connector: BetfairConnector, processor: QuoteProcessor, venue_id: int, index: SelectionIndex
+    connector: MarketDataConnector, processor: QuoteProcessor, venue_id: int, index: SelectionIndex
 ) -> None:
     async for draft in connector.stream_quotes(index.vendor_market_ids()):
         await _handle_quote_draft(processor, venue_id, connector.venue, index, draft)
 
 
 async def run_polling(
-    connector: BetfairConnector, processor: QuoteProcessor, venue_id: int, index: SelectionIndex
+    connector: MarketDataConnector, processor: QuoteProcessor, venue_id: int, index: SelectionIndex
 ) -> None:
     while True:
         drafts = await connector.get_quotes(index.vendor_market_ids())
@@ -150,9 +155,8 @@ async def run_polling(
         await asyncio.sleep(_POLL_FALLBACK_INTERVAL_SECONDS)
 
 
-async def run() -> None:
+async def run_betfair() -> None:
     settings = get_settings()
-    configure_logging(settings.log_level, service="worker-ingest")
 
     connector = BetfairConnector(settings)
     redis_client = redis_asyncio.from_url(settings.redis_url, decode_responses=True)
@@ -202,6 +206,15 @@ async def run() -> None:
         heartbeat_task.cancel()
         await connector.aclose()
         await redis_client.aclose()
+
+
+async def run() -> None:
+    """Runs Betfair ingestion and odds-provider (bookmaker) discovery
+    concurrently. Either source idling because it isn't configured does not
+    stop the other — see module docstring."""
+    settings = get_settings()
+    configure_logging(settings.log_level, service="worker-ingest")
+    await asyncio.gather(run_betfair(), odds_provider_ingestion.run(settings))
 
 
 if __name__ == "__main__":

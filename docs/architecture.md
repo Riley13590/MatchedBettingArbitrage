@@ -1,6 +1,6 @@
-# Architecture — Milestones 0-1
+# Architecture — Milestones 0-2
 
-## 1. Repo tree (target for M0/M1; later milestones add implementation, not new top-level shape)
+## 1. Repo tree (target shape from M0; later milestones mostly add implementation to existing packages, not new top-level shape)
 
 ```text
 marketedge/
@@ -54,17 +54,29 @@ marketedge/
 │   │   └── errors.py
 │   ├── connectors/
 │   │   ├── base.py               # MarketDataConnector / ExecutionConnector protocols
-│   │   └── betfair/
-│   │       ├── client.py         # certlogin + JSON-RPC betting API
-│   │       ├── stream.py         # Exchange Stream API (TLS socket)
-│   │       ├── mapper.py         # vendor payload -> canonical DTOs
-│   │       └── execution.py      # stub, execution_allowed gated off by default
+│   │   ├── drafts.py             # EventDraft/MarketDraft/RunnerDraft/QuoteDraft — shared by every mapper
+│   │   ├── betfair/
+│   │   │   ├── client.py         # certlogin + JSON-RPC betting API
+│   │   │   ├── stream.py         # Exchange Stream API (TLS socket)
+│   │   │   ├── mapper.py         # vendor payload -> canonical DTOs
+│   │   │   └── execution.py      # stub, execution_allowed gated off by default
+│   │   └── odds_provider/        # Milestone 2 — The Odds API (bookmaker prices)
+│   │       ├── client.py         # REST client + x-requests-* credit accounting
+│   │       └── mapper.py         # bundled per-sport response -> canonical DTOs
 │   ├── ingestion/
-│   │   ├── orchestrator.py
+│   │   ├── orchestrator.py           # Betfair discover/stream/poll + runs both loops
+│   │   ├── odds_provider_ingestion.py # Milestone 2 — adaptive per-sport discovery loop
+│   │   ├── discovery_scheduler.py    # Milestone 2 — spec §41.3 polling buckets
+│   │   ├── budget.py                 # Milestone 2 — spec §41.2/41.6 credit ledger
 │   │   ├── quote_processor.py
 │   │   └── heartbeat.py
 │   ├── matching/                 # Milestone 2 — event/market/selection matching
-│   ├── pricing/                  # Milestone 2/8 — de-vig, consensus, CLV
+│   │   ├── aliases.py            # pure fuzzy name normalisation (no I/O)
+│   │   ├── alias_resolver.py     # DB-backed alias-table override layer
+│   │   ├── confidence.py         # spec §11.3 event-match scoring formula
+│   │   ├── event_matcher.py      # AUTO_MATCH / REVIEW / NO_MATCH decision
+│   │   └── selection_matcher.py  # HOME/AWAY/DRAW/OVER/UNDER outcome_key assignment
+│   ├── pricing/                  # Milestone 8 — de-vig, consensus, CLV
 │   ├── strategies/
 │   │   ├── base.py
 │   │   ├── arbitrage/            # Milestone 3
@@ -76,7 +88,8 @@ marketedge/
 │   ├── analytics/                # Milestone 7
 │   ├── storage/
 │   │   ├── db.py
-│   │   ├── repositories/
+│   │   ├── orm.py
+│   │   ├── repositories/         # incl. api_usage.py, aliases.py (Milestone 2)
 │   │   └── migrations/           # Alembic
 │   └── observability/
 │       ├── logging.py
@@ -88,25 +101,36 @@ marketedge/
 │   ├── replay/
 │   └── fixtures/
 └── scripts/
+    └── seed_aliases.py           # Milestone 2 — bootstrap participant_aliases rows
 ```
 
 **Agent rule (unchanged from spec):** vendor-specific fields never leak into
 `marketedge/domain`, `marketedge/strategies`, `marketedge/risk`, or
 `marketedge/pricing`. Only `marketedge/connectors/<venue>/` may import a
-vendor SDK or reference vendor field names. Directories for milestones not
-yet built (`matching/`, `pricing/`, `strategies/value/`, `risk/`,
-`execution/`, `portfolio/`, `analytics/`) exist as placeholders with a
-single stub module so the shape in section 6 of the spec is preserved from
-M0 onward, without pre-building unimplemented logic.
+vendor SDK or reference vendor field names — `marketedge/matching/` is not
+an exception: `event_matcher.py`/`confidence.py`/`selection_matcher.py`
+operate only on `MatchCandidate`/canonical field names, never on a raw
+Betfair or Odds API payload. Directories for milestones not yet built
+(`pricing/`, `strategies/value/`, `risk/`, `execution/`, `portfolio/`,
+`analytics/`) still exist as placeholders with a single stub module so the
+shape in section 6 of the spec is preserved, without pre-building
+unimplemented logic.
 
-## 2. Component diagram (M0/M1 scope highlighted)
+## 2. Component diagram (M0-M2 scope highlighted)
 
 ```mermaid
 flowchart LR
-    BF[Betfair Exchange] -->|REST JSON-RPC + Stream API| C[connectors/betfair]
-    C --> M[mapper.py]
-    M --> O[ingestion/orchestrator.py]
-    O --> QP[quote_processor.py]
+    BF[Betfair Exchange] -->|REST JSON-RPC + Stream API| C1[connectors/betfair]
+    OA[The Odds API] -->|REST, bundled per-sport| C2[connectors/odds_provider]
+    C1 --> M1M[mapper.py]
+    C2 --> M2M[mapper.py]
+    M1M --> O1[ingestion/orchestrator.py]
+    M2M --> O2[ingestion/odds_provider_ingestion.py]
+    O2 --> SCHED[discovery_scheduler.py]
+    O2 --> BUDGET[budget.py -> api_usage]
+    O1 --> MATCH[matching/event_matcher.py + selection_matcher.py]
+    O2 --> MATCH
+    MATCH --> QP[quote_processor.py]
     QP --> RC[(Redis latest-quote cache)]
     QP --> PG[(PostgreSQL)]
     PG --> API[FastAPI apps/api]
@@ -125,15 +149,19 @@ flowchart LR
     EXEC -.-> BF
 ```
 
-Only the solid path (Betfair connector → mapper → orchestrator → Redis/Postgres
-→ API → web) is implemented in M0/M1. Everything marked `future` is an empty
-package with a stub module, wired in later milestones per the spec's
-milestone sequence (section 28) and validation gates (section 44).
+The solid path is implemented through M2: two connectors, each mapping into
+shared `connectors/drafts.py` DTOs, converging through `matching/` so a
+Betfair event and an odds-provider event for the same fixture join onto one
+canonical event/market/selection before quotes are persisted. Everything
+marked `future` is still an empty package with a stub module, wired in
+later milestones per the spec's milestone sequence (section 28) and
+validation gates (section 44).
 
-## 3. Database ERD (M0/M1: full schema from spec section 8 is created now,
-since it is defined independently of milestone number; only `quotes` is
-populated with live data in M1 — `opportunities`, `orders`, `fills`, and
-`signal_evaluations` are created empty, ready for Milestones 3/5/7)
+## 3. Database ERD (full schema from spec section 8 was created at M0/M1,
+since it is defined independently of milestone number; M2 adds `api_usage`
+and `participant_aliases`, spec sections 41.2 and 11.2. `opportunities`,
+`orders`, `fills`, and `signal_evaluations` remain empty, ready for
+Milestones 3/5/7)
 
 ```mermaid
 erDiagram
@@ -253,9 +281,32 @@ erDiagram
         numeric realised_pnl
         timestamptz settled_at
     }
+    API_USAGE {
+        bigint id PK
+        text provider
+        text endpoint
+        text sport_key
+        text market_keys
+        text regions
+        timestamptz requested_at
+        bigint credits_used
+        bigint remaining_credits_reported
+        bigint response_status
+        bigint response_latency_ms
+    }
+    PARTICIPANT_ALIASES {
+        bigint id PK
+        text sport
+        text raw_name
+        text canonical_key
+    }
 ```
 
-## 4. Domain model interfaces (M1)
+`API_USAGE` and `PARTICIPANT_ALIASES` have no foreign keys into the rest of
+the schema — they're standalone operational tables (spec sections 41.2 and
+11.2 respectively), not part of the event/market/quote graph.
+
+## 4. Domain model interfaces (M1-M2)
 
 See `marketedge/domain/models.py`, `marketedge/domain/enums.py`, and
 `marketedge/connectors/base.py` for the authoritative definitions. Summary:
@@ -270,37 +321,81 @@ See `marketedge/domain/models.py`, `marketedge/domain/enums.py`, and
 - `MarketDataConnector` / `ExecutionConnector` — `typing.Protocol`s in
   `marketedge/connectors/base.py`, matching spec section 9 exactly. Strategy
   and API code depend only on these protocols, never on `betfair.*` types.
+  Note `OddsProviderConnector` deliberately does **not** implement
+  `MarketDataConnector` — see §6 below.
+- `MatchCandidate` (`marketedge/matching/confidence.py`) — the minimal
+  vendor-neutral shape event matching needs (sport/competition/start
+  time/participants), decoupled from both `EventDraft` and the `Event` ORM
+  row so the pure scoring functions don't depend on either.
+- `MatchResult` / `MatchDecision` (`marketedge/matching/event_matcher.py`)
+  — `AUTO_MATCH` (score ≥ 0.98) / `REVIEW` (0.90-0.98) / `NO_MATCH` (< 0.90),
+  spec section 11.3's gates exactly.
 
-## 5. Assumptions / questions deferred past M0-M1
+## 5. Adaptations from the spec's abstract shape (Milestone 2)
 
-These do not block Milestone 0/1 and are intentionally left open:
+The spec's `MarketDataConnector` protocol (list_events → list_markets →
+get_quotes/stream_quotes) is modelled on exchange-style APIs like
+Betfair's. The Odds API returns an entire sport's events, bookmakers,
+markets and prices in **one** bundled call — forcing that through the same
+three/four-call waterfall per event would multiply metered API credit
+usage for no benefit, directly undermining the budget-accounting goal this
+same milestone introduces (spec section 41.2). `OddsProviderConnector`
+therefore exposes its own two-method interface (`list_sports`,
+`get_sport_snapshot`) and is driven by a separate ingestion loop
+(`marketedge/ingestion/odds_provider_ingestion.py`) rather than
+`orchestrator.py`'s generic `discover()`. Both loops converge on the same
+`marketedge.matching` + `QuoteProcessor` + storage layer, so this is a
+difference in *how discovery is fetched*, not in what gets persisted or
+how cross-venue matching works.
 
-1. **Betfair Stream API subscription scope.** M1 subscribes to
-   `marketSubscription` with `EX_BEST_OFFERS` ladder depth for whatever
-   markets `list_events`/`list_markets` discover for the configured sports
-   in `.env`/`marketedge/config/settings.py` (`SPORTS_ENABLED`, defaults to
-   football + tennis per spec section 30, but the connector itself queries
-   `listEventTypes` dynamically rather than hard-coding IDs — spec M1 exit
-   criteria). Multi-sport *discovery* scheduling/budgeting is Milestone 2.
-2. **No bookmaker odds feed yet.** `marketedge/connectors/odds_provider/`
-   is not created until Milestone 2; M1 has exactly one connector
-   (Betfair), so market *matching* (`marketedge/matching/`) has nothing to
-   join against yet and stays a stub.
-3. **Certificate provisioning.** Betfair certificate login requires a
+Similarly, the spec's per-sport/per-market polling policy (section 41.3)
+is implemented per-sport only (`discovery_scheduler.py`) — again because
+one API call already refreshes every market for every event in that sport,
+so there is no separate "market" axis to schedule independently for this
+provider.
+
+## 6. Assumptions / questions deferred past M0-M2
+
+1. **Certificate provisioning.** Betfair certificate login requires a
    self-signed or CA client certificate uploaded to the bettor's Betfair
    account outside this codebase. `.env.example` documents the expected
    paths; no cert is generated or committed here.
-4. **Execution stays off.** `connectors/betfair/execution.py` exists as an
+2. **Execution stays off.** `connectors/betfair/execution.py` exists as an
    interface-shaped stub only; `BETFAIR_EXECUTION_ALLOWED` defaults to
    `false` and there is no code path that can flip it at runtime (Milestone
-   5 concern).
-5. **Retention/partitioning.** `quotes` is not yet partitioned by date
-   (spec 10.3/8.3 note); acceptable at M1 data volumes, revisit once
+   5 concern). The odds provider has no execution surface at all — spec
+   section 2 keeps bookmaker-side execution manual, permanently.
+3. **Retention/partitioning.** `quotes` is not yet partitioned by date
+   (spec 10.3/8.3 note); acceptable at current data volumes, revisit once
    continuous ingestion has run for weeks.
-6. **Auth on the API.** Spec section 25 requires auth + audit trail on all
-   mutating endpoints. M1 has no mutating endpoints yet (opportunities/
-   orders/portfolio routers are stubs returning `501`), so API auth
-   middleware is deferred to Milestone 4-5 alongside the risk engine.
-7. **CI does not run live Betfair calls.** Contract tests replay sanitised
-   fixture payloads (`tests/fixtures/betfair_*.json`); nothing in CI
-   requires real credentials.
+4. **Auth on the API.** Spec section 25 requires auth + audit trail on all
+   mutating endpoints. Through M2 there are still no mutating endpoints
+   (opportunities/orders/portfolio routers are stubs returning `501`), so
+   API auth middleware is deferred to Milestone 4-5 alongside the risk
+   engine.
+5. **CI does not run live Betfair/Odds API calls.** Contract tests replay
+   sanitised fixture payloads (`tests/fixtures/betfair_*.json`,
+   `tests/fixtures/oddsapi_*.json`); nothing in CI requires real
+   credentials or spends real API credits.
+6. **Bookmaker venue geo/terms status starts `UNVERIFIED`.**
+   `VenueRepository.upsert_bookmaker` creates each new bookmaker at
+   `data_allowed=true, execution_allowed=false, geo_status=UNVERIFIED,
+   terms_status=UNVERIFIED` — nobody has independently confirmed that
+   specific bookmaker's GB licensing/terms yet. Execution was already
+   `false` and stays `false`; this only affects how the venue matrix
+   displays that bookmaker until someone reviews and updates the row.
+7. **Competition/league granularity differs by venue.** Betfair reports a
+   `competition` on the event; The Odds API's "sport" *is* the league
+   (`sport_key`/`title`, e.g. `soccer_epl` → "EPL"), so
+   `connectors/odds_provider/mapper.py` uses the sport `group` (e.g.
+   "Soccer") as `sport` and the league title as `competition` to line up
+   with Betfair's fields for the event-matching confidence score. Cup
+   competitions or leagues named differently across the two providers are
+   a known source of lower `competition_similarity` — the score formula
+   tolerates this (competition is only 20% of the weight) but it's a
+   candidate for the alias table if it causes wrong-band matches often.
+8. **Alias table isn't populated from confirmed matches yet.**
+   `scripts/seed_aliases.py` seeds a small hand-picked set;
+   promoting a human-confirmed `REVIEW`-band match into a permanent
+   `participant_aliases` row is not automated (no review UI exists yet —
+   the API surfaces `needs_review` per event, but nothing writes back).

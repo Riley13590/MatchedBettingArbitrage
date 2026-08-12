@@ -1,0 +1,44 @@
+[
+  {
+    "id": "e1b2c3d4",
+    "sport_key": "soccer_epl",
+    "sport_title": "EPL",
+    "commence_time": "2026-08-15T14:00:00Z",
+    "home_team": "Arsenal",
+    "away_team": "Chelsea",
+    "bookmakers": [
+      {
+        "key": "williamhill",
+        "title": "William Hill",
+        "last_update": "2026-08-12T00:05:00Z",
+        "markets": [
+          {
+            "key": "h2h",
+            "last_update": "2026-08-12T00:05:00Z",
+            "outcomes": [
+              {"name": "Arsenal", "price": 2.05},
+              {"name": "Draw", "price": 3.6},
+              {"name": "Chelsea", "price": 3.9}
+            ]
+          }
+        ]
+      },
+      {
+        "key": "bet365",
+        "title": "Bet365",
+        "last_update": "2026-08-12T00:04:00Z",
+        "markets": [
+          {
+            "key": "h2h",
+            "last_update": "2026-08-12T00:04:00Z",
+            "outcomes": [
+              {"name": "Arsenal", "price": 2.02},
+              {"name": "Draw", "price": 3.55},
+              {"name": "Chelsea", "price": 3.95}
+            ]
+          }
+        ]
+      }
+    ]
+  }
+]

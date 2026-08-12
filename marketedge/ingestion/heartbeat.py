@@ -10,15 +10,25 @@ from __future__ import annotations
 
 import asyncio
 import logging
+from typing import Protocol
 
-from marketedge.connectors.base import MarketDataConnector
 from marketedge.observability.logging import log_event
 from marketedge.observability.metrics import connector_up
 
 logger = logging.getLogger(__name__)
 
 
-async def heartbeat_loop(connector: MarketDataConnector, interval_seconds: float = 30.0) -> None:
+class HealthCheckable(Protocol):
+    """Narrower than `MarketDataConnector` — every connector satisfies this,
+    including ones like `OddsProviderConnector` that don't implement the
+    full list_events/list_markets/get_quotes/stream_quotes waterfall."""
+
+    venue: str
+
+    async def healthcheck(self) -> bool: ...
+
+
+async def heartbeat_loop(connector: HealthCheckable, interval_seconds: float = 30.0) -> None:
     while True:
         try:
             healthy = await connector.healthcheck()

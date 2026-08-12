@@ -17,6 +17,8 @@ _APP_TABLES = (
     "markets",
     "vendor_events",
     "events",
+    "api_usage",
+    "participant_aliases",
 )
 
 
@@ -24,9 +26,12 @@ _APP_TABLES = (
 async def clean_tables() -> AsyncIterator[None]:
     """Truncates all non-seed tables after every integration/replay test so
     tests don't depend on execution order. `venues` is intentionally
-    excluded — it holds the migration-seeded capability rows every test
-    relies on."""
+    excluded from the TRUNCATE — it holds the migration-seeded capability
+    rows every test relies on — but dynamically-created bookmaker venue
+    rows (`oddsapi:*`, spec section 40.1's runtime venue discovery) are
+    deleted individually so they don't leak between tests either."""
     yield
     engine = get_engine()
     async with engine.begin() as conn:
         await conn.execute(text(f"TRUNCATE {', '.join(_APP_TABLES)} RESTART IDENTITY CASCADE"))
+        await conn.execute(text("DELETE FROM venues WHERE code LIKE 'oddsapi:%'"))

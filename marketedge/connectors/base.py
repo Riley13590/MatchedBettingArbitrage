@@ -14,9 +14,12 @@ from collections.abc import AsyncIterator
 from dataclasses import dataclass
 from datetime import datetime
 from decimal import Decimal
-from typing import Any, Protocol
+from typing import TYPE_CHECKING, Protocol
 
 from marketedge.domain.enums import Side
+
+if TYPE_CHECKING:
+    from marketedge.connectors.drafts import EventDraft, MarketDraft, QuoteDraft
 
 
 @dataclass(frozen=True)
@@ -26,23 +29,21 @@ class TimeWindow:
 
 
 class MarketDataConnector(Protocol):
-    """Spec section 9. Return types are intentionally `Any`-flexible (each
-    connector returns its own vendor-adapter draft dataclasses — e.g.
-    `betfair.mapper.EventDraft` — already translated to canonical field
-    names) rather than fixed to `dict`, so mypy can check each connector's
-    drafts structurally without every venue converging on a raw dict shape.
-    Ingestion code depends only on this Protocol, never on a concrete
-    connector class or a vendor draft type."""
+    """Spec section 9. `list_markets` takes the already-mapped `EventDraft`
+    (not just a vendor event ID) because assigning consistent HOME/AWAY/DRAW
+    outcome keys — required for cross-venue selection matching, spec section
+    11 — needs the event's participant names. Ingestion code depends only
+    on this Protocol, never on a concrete connector class."""
 
     venue: str
 
-    async def list_events(self, window: TimeWindow) -> list[Any]: ...
+    async def list_events(self, window: TimeWindow) -> list[EventDraft]: ...
 
-    async def list_markets(self, vendor_event_id: str) -> list[Any]: ...
+    async def list_markets(self, event: EventDraft) -> list[MarketDraft]: ...
 
-    async def get_quotes(self, vendor_market_ids: list[str]) -> list[Any]: ...
+    async def get_quotes(self, vendor_market_ids: list[str]) -> list[QuoteDraft]: ...
 
-    def stream_quotes(self, subscriptions: list[str]) -> AsyncIterator[Any]: ...
+    def stream_quotes(self, subscriptions: list[str]) -> AsyncIterator[QuoteDraft]: ...
 
     async def healthcheck(self) -> bool: ...
 

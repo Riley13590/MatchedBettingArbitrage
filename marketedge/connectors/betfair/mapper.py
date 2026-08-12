@@ -18,12 +18,13 @@ market_type/period/settlement_scope tuples.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
 from datetime import UTC, datetime
 from decimal import Decimal
 from typing import Any
 
+from marketedge.connectors.drafts import EventDraft, MarketDraft, QuoteDraft, RunnerDraft
 from marketedge.domain.enums import Side
+from marketedge.matching.selection_matcher import assign_outcome_key
 
 # Betfair `description.marketType` -> (our market_type, period, settlement_scope).
 # Extend as new Betfair market types are ingested; never guess silently for
@@ -64,46 +65,6 @@ def _parse_iso(ts: str | None) -> datetime | None:
     return datetime.fromisoformat(ts.replace("Z", "+00:00"))
 
 
-@dataclass(frozen=True)
-class EventDraft:
-    vendor_event_id: str
-    sport: str
-    competition: str
-    start_time_utc: datetime
-    home_participant: str | None
-    away_participant: str | None
-    raw_name: str
-
-
-@dataclass(frozen=True)
-class RunnerDraft:
-    vendor_selection_id: str
-    outcome_key: str
-    display_name: str
-
-
-@dataclass(frozen=True)
-class MarketDraft:
-    vendor_market_id: str
-    vendor_event_id: str
-    market_type: str
-    period: str
-    line: Decimal | None
-    settlement_scope: str
-    runners: tuple[RunnerDraft, ...]
-
-
-@dataclass(frozen=True)
-class QuoteDraft:
-    vendor_market_id: str
-    vendor_selection_id: str
-    side: Side
-    price: Decimal
-    available_size: Decimal | None
-    is_live: bool
-    source_timestamp_utc: datetime | None
-
-
 def map_event(sport: str, raw_event_item: dict[str, Any]) -> EventDraft:
     event = raw_event_item["event"]
     name = event.get("name", "")
@@ -129,7 +90,21 @@ def _split_participants(name: str) -> tuple[str | None, str | None]:
     return None, None
 
 
-def map_market(raw_market_catalogue_item: dict[str, Any]) -> MarketDraft:
+def map_market(
+    raw_market_catalogue_item: dict[str, Any],
+    sport: str = "",
+    home_participant: str | None = None,
+    away_participant: str | None = None,
+) -> MarketDraft:
+    """`sport`/`home_participant`/`away_participant` come from the
+    already-matched canonical event and are used to assign HOME/AWAY
+    outcome keys that are consistent across venues (spec section 11 —
+    without this, two venues' selections for the same match-odds market can
+    never join on `outcome_key`). Callers that don't yet have a matched
+    event (e.g. isolated contract tests) may omit them; runners then fall
+    back to a vendor-derived key that simply won't cross-venue-match, which
+    is a safe (if less useful) default — see `selection_matcher.py`.
+    """
     description = raw_market_catalogue_item.get("description", {})
     betfair_market_type = description.get(
         "marketType", raw_market_catalogue_item.get("marketName", "UNKNOWN")
@@ -140,7 +115,14 @@ def map_market(raw_market_catalogue_item: dict[str, Any]) -> MarketDraft:
     runners = tuple(
         RunnerDraft(
             vendor_selection_id=str(runner["selectionId"]),
-            outcome_key=_outcome_key(runner, market_type),
+            outcome_key=assign_outcome_key(
+                raw_name=str(runner.get("runnerName", "")),
+                market_type=market_type,
+                sport=sport,
+                home_participant=home_participant,
+                away_participant=away_participant,
+                fallback_key=f"RUNNER_{runner['selectionId']}",
+            ),
             display_name=runner.get("runnerName", str(runner["selectionId"])),
         )
         for runner in raw_market_catalogue_item.get("runners", [])
@@ -155,20 +137,6 @@ def map_market(raw_market_catalogue_item: dict[str, Any]) -> MarketDraft:
         settlement_scope=settlement_scope,
         runners=runners,
     )
-
-
-def _outcome_key(runner: dict[str, Any], market_type: str) -> str:
-    name = str(runner.get("runnerName", "")).upper()
-    if market_type == "MATCH_ODDS" and name == "THE DRAW":
-        return "DRAW"
-    if name.startswith("OVER"):
-        return "OVER"
-    if name.startswith("UNDER"):
-        return "UNDER"
-    # Fall back to a stable, vendor-derived key; canonical HOME/AWAY
-    # assignment against event participants is a matching-layer concern
-    # (Milestone 2) once there is more than one venue to reconcile against.
-    return f"RUNNER_{runner['selectionId']}"
 
 
 def map_market_book(raw_market_book: dict[str, Any]) -> list[QuoteDraft]:

@@ -14,15 +14,13 @@ from marketedge.config.settings import Settings
 from marketedge.connectors.base import TimeWindow
 from marketedge.connectors.betfair.client import BetfairClient
 from marketedge.connectors.betfair.mapper import (
-    EventDraft,
-    MarketDraft,
-    QuoteDraft,
     map_event,
     map_market,
     map_market_book,
     map_stream_change_message,
 )
 from marketedge.connectors.betfair.stream import BetfairStreamClient
+from marketedge.connectors.drafts import EventDraft, MarketDraft, QuoteDraft
 from marketedge.observability.logging import log_event
 
 logger = logging.getLogger(__name__)
@@ -70,9 +68,19 @@ class BetfairConnector:
             drafts.extend(map_event(sport_name, item) for item in raw_events)
         return drafts
 
-    async def list_markets(self, vendor_event_id: str) -> list[MarketDraft]:
-        raw_markets = await self._client.list_market_catalogue({"eventIds": [vendor_event_id]})
-        return [map_market(item) for item in raw_markets]
+    async def list_markets(self, event: EventDraft) -> list[MarketDraft]:
+        raw_markets = await self._client.list_market_catalogue(
+            {"eventIds": [event.vendor_event_id]}
+        )
+        return [
+            map_market(
+                item,
+                sport=event.sport,
+                home_participant=event.home_participant,
+                away_participant=event.away_participant,
+            )
+            for item in raw_markets
+        ]
 
     async def get_quotes(self, vendor_market_ids: list[str]) -> list[QuoteDraft]:
         if not vendor_market_ids:

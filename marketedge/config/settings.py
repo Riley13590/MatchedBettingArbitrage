@@ -26,7 +26,11 @@ class Settings(BaseSettings):
     )
     redis_url: str = Field(default="redis://localhost:6379/0", alias="REDIS_URL")
 
-    sports_enabled: tuple[str, ...] = ("football", "tennis")
+    # Matched case-insensitively against each connector's own catalogue
+    # names, not a private taxonomy — Betfair's eventType.name and The Odds
+    # API's sport `group` both say "Soccer"/"Tennis", not "football"/"tennis".
+    # Override via env as a JSON array, e.g. SPORTS_ENABLED=["Soccer"].
+    sports_enabled: tuple[str, ...] = Field(default=("Soccer", "Tennis"), alias="SPORTS_ENABLED")
 
     # --- Betfair ---
     betfair_app_key: str = Field(default="", alias="BETFAIR_APP_KEY")
@@ -55,6 +59,36 @@ class Settings(BaseSettings):
             and self.betfair_cert_path
             and self.betfair_key_path
         )
+
+    # --- Bookmaker odds provider (The Odds API — see spec section 41.1) ---
+    # Pricing/plan sizes are external, configurable facts, never hard-coded
+    # product assumptions (spec section 41.1).
+    odds_provider_api_key: str = Field(default="", alias="ODDS_PROVIDER_API_KEY")
+    odds_provider_base_url: str = Field(
+        default="https://api.the-odds-api.com/v4", alias="ODDS_PROVIDER_BASE_URL"
+    )
+    odds_provider_regions: str = Field(default="uk", alias="ODDS_PROVIDER_REGIONS")
+    odds_provider_markets: str = Field(default="h2h", alias="ODDS_PROVIDER_MARKETS")
+
+    @property
+    def odds_provider_configured(self) -> bool:
+        return bool(self.odds_provider_api_key)
+
+    # --- API-credit budget (spec section 41.2/41.6) ---
+    # Both are monthly caps; the scheduler degrades polling cadence as the
+    # soft cap approaches and stops discovery calls entirely at the hard cap.
+    odds_provider_soft_monthly_budget: int = Field(
+        default=18_000, alias="ODDS_PROVIDER_SOFT_MONTHLY_BUDGET"
+    )
+    odds_provider_hard_monthly_budget: int = Field(
+        default=20_000, alias="ODDS_PROVIDER_HARD_MONTHLY_BUDGET"
+    )
+
+    # --- Adaptive discovery polling (spec section 41.3 defaults) ---
+    discovery_poll_seconds_gt_24h: int = Field(default=1800, alias="DISCOVERY_POLL_SECONDS_GT_24H")
+    discovery_poll_seconds_6h_24h: int = Field(default=600, alias="DISCOVERY_POLL_SECONDS_6H_24H")
+    discovery_poll_seconds_1h_6h: int = Field(default=180, alias="DISCOVERY_POLL_SECONDS_1H_6H")
+    discovery_poll_seconds_lt_1h: int = Field(default=60, alias="DISCOVERY_POLL_SECONDS_LT_1H")
 
 
 @lru_cache

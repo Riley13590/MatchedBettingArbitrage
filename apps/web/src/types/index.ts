@@ -23,4 +23,17 @@ export interface EventSummary {
   home_participant: string | null;
   away_participant: string | null;
   status: string;
+  match_confidence: number | null;
+  needs_review: boolean;
+}
+
+export interface ApiUsage {
+  provider: string;
+  credits_used_this_month: number;
+  credits_by_sport: Record<string, number>;
+  remaining_credits_reported: number | null;
+  soft_monthly_budget: number;
+  hard_monthly_budget: number;
+  over_soft_budget: boolean;
+  over_hard_budget: boolean;
 }

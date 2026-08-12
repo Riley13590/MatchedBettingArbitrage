@@ -188,3 +188,36 @@ class SignalEvaluation(Base):
     expected_value: Mapped[Decimal | None] = mapped_column(Numeric(10, 6), nullable=True)
     realised_pnl: Mapped[Decimal | None] = mapped_column(Numeric(14, 2), nullable=True)
     settled_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+
+class ApiUsage(Base):
+    """Milestone 2 / spec section 41.2 — one row per outbound request to a
+    metered market-data provider, so credit usage/budget forecasting never
+    has to be reconstructed from logs."""
+
+    __tablename__ = "api_usage"
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    provider: Mapped[str] = mapped_column(String, nullable=False)
+    endpoint: Mapped[str] = mapped_column(String, nullable=False)
+    sport_key: Mapped[str | None] = mapped_column(String, nullable=True)
+    market_keys: Mapped[str | None] = mapped_column(String, nullable=True)
+    regions: Mapped[str | None] = mapped_column(String, nullable=True)
+    requested_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    credits_used: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
+    remaining_credits_reported: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
+    response_status: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
+    response_latency_ms: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
+
+
+class ParticipantAlias(Base):
+    """Spec section 11.2 — controlled alias table, e.g. "Man Utd" -> team
+    key "MAN_UTD", preferred over relying solely on fuzzy matching."""
+
+    __tablename__ = "participant_aliases"
+    __table_args__ = (UniqueConstraint("sport", "raw_name"),)
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    sport: Mapped[str] = mapped_column(String, nullable=False)
+    raw_name: Mapped[str] = mapped_column(String, nullable=False)
+    canonical_key: Mapped[str] = mapped_column(String, nullable=False)

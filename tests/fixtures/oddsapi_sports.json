@@ -1,0 +1,5 @@
+[
+  {"key": "soccer_epl", "group": "Soccer", "title": "EPL", "description": "English Premier League", "active": true, "has_outrights": false},
+  {"key": "tennis_atp_wimbledon", "group": "Tennis", "title": "ATP Wimbledon", "description": "Wimbledon", "active": true, "has_outrights": false},
+  {"key": "americanfootball_nfl", "group": "American Football", "title": "NFL", "description": "US Football", "active": true, "has_outrights": false}
+]
