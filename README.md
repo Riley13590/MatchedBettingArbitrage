@@ -16,6 +16,17 @@ current progress.
 
 ## Quick start
 
+### Windows — double-click launcher
+
+Requires [Docker Desktop](https://www.docker.com/products/docker-desktop)
+installed and running. Double-click `MarketEdge.exe` in the repo root — it
+starts the stack (first run takes a few minutes while images build) and
+opens the dashboard automatically. It boots fine with no API keys set;
+you'll just see no live prices until you add credentials to `.env` and run
+it again. See `launcher/README.md` for how it works and how to rebuild it.
+
+### Everything else (macOS/Linux, or manual on Windows)
+
 ```bash
 cp .env.example .env
 docker compose up --build
@@ -35,6 +46,7 @@ marketedge/         Core domain, connectors, ingestion, storage
 docs/               Architecture, ADRs, runbooks, status
 tests/              unit / integration / contract / replay
 scripts/            operational scripts
+launcher/           Windows .exe launcher source (see launcher/README.md)
 ```
 
 See `docs/architecture.md` for the component diagram and repo-tree rationale,

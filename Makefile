@@ -1,4 +1,4 @@
-.PHONY: install lint typecheck test up down migrate revision fmt
+.PHONY: install lint typecheck test up down migrate revision fmt launcher
 
 install:
 	pip install -e ".[dev]"
@@ -30,3 +30,6 @@ migrate:
 
 revision:
 	alembic -c marketedge/storage/migrations/alembic.ini revision --autogenerate -m "$(m)"
+
+launcher:
+	cd launcher && GOOS=windows GOARCH=amd64 go build -ldflags="-H=windowsgui" -o ../MarketEdge.exe .
