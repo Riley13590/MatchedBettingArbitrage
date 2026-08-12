@@ -1,4 +1,4 @@
-# Architecture — Milestones 0-2
+# Architecture — Milestones 0-3
 
 ## 1. Repo tree (target shape from M0; later milestones mostly add implementation to existing packages, not new top-level shape)
 
@@ -79,7 +79,13 @@ marketedge/
 │   ├── pricing/                  # Milestone 8 — de-vig, consensus, CLV
 │   ├── strategies/
 │   │   ├── base.py
-│   │   ├── arbitrage/            # Milestone 3
+│   │   ├── arbitrage/             # Milestone 3
+│   │   │   ├── dutching.py        # spec §13.1, Hypothesis-tested
+│   │   │   ├── back_lay.py        # spec §13.2, derived cash-flow equations
+│   │   │   ├── fees.py            # venue commission model
+│   │   │   ├── models.py          # ArbitrageOpportunity / TradeLeg (spec §13.3)
+│   │   │   ├── detector.py        # pure detection given a quote snapshot
+│   │   │   └── runner.py          # periodic scan + persistence + lifetime tracking
 │   │   ├── value/                # Milestone 8
 │   │   └── exchange/             # Milestone 10
 │   ├── risk/                     # Milestone 4
@@ -89,7 +95,7 @@ marketedge/
 │   ├── storage/
 │   │   ├── db.py
 │   │   ├── orm.py
-│   │   ├── repositories/         # incl. api_usage.py, aliases.py (Milestone 2)
+│   │   ├── repositories/         # incl. api_usage.py, aliases.py, opportunities.py
 │   │   └── migrations/           # Alembic
 │   └── observability/
 │       ├── logging.py

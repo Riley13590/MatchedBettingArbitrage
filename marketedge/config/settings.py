@@ -7,6 +7,7 @@ scattering config access).
 
 from __future__ import annotations
 
+from decimal import Decimal
 from functools import lru_cache
 
 from pydantic import Field
@@ -89,6 +90,21 @@ class Settings(BaseSettings):
     discovery_poll_seconds_6h_24h: int = Field(default=600, alias="DISCOVERY_POLL_SECONDS_6H_24H")
     discovery_poll_seconds_1h_6h: int = Field(default=180, alias="DISCOVERY_POLL_SECONDS_1H_6H")
     discovery_poll_seconds_lt_1h: int = Field(default=60, alias="DISCOVERY_POLL_SECONDS_LT_1H")
+
+    # --- Arbitrage detector filters (spec section 13.4 / example config §30) ---
+    # Detection + persistence only — paper mode, no execution capability
+    # exists yet (Milestone 5) — so this is safe to default on.
+    arbitrage_enabled: bool = Field(default=True, alias="ARBITRAGE_ENABLED")
+    arbitrage_min_net_roi: Decimal = Field(default=Decimal("0.008"), alias="ARBITRAGE_MIN_NET_ROI")
+    arbitrage_min_profit_gbp: Decimal = Field(
+        default=Decimal("2.00"), alias="ARBITRAGE_MIN_PROFIT_GBP"
+    )
+    arbitrage_max_quote_age_ms: int = Field(default=2000, alias="ARBITRAGE_MAX_QUOTE_AGE_MS")
+    arbitrage_min_seconds_to_start: int = Field(default=300, alias="ARBITRAGE_MIN_SECONDS_TO_START")
+    arbitrage_in_play: bool = Field(default=False, alias="ARBITRAGE_IN_PLAY")
+    arbitrage_default_bankroll_gbp: Decimal = Field(
+        default=Decimal("1000"), alias="ARBITRAGE_DEFAULT_BANKROLL_GBP"
+    )
 
 
 @lru_cache

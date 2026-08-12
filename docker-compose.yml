@@ -80,6 +80,28 @@ services:
     volumes:
       - ./marketedge:/app/marketedge
 
+  worker-strategy:
+    build:
+      context: .
+      dockerfile: docker/python.Dockerfile
+    command: python -m marketedge.strategies.arbitrage.runner
+    env_file: .env
+    environment:
+      DATABASE_URL: postgresql+asyncpg://marketedge:marketedge@postgres:5432/marketedge
+      REDIS_URL: redis://redis:6379/0
+      # No exchange/exec credentials here either — this worker only reads
+      # quotes already persisted by worker-ingest and writes paper
+      # opportunities. See docs/adr/003-execution-isolation.md.
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+    volumes:
+      - ./marketedge:/app/marketedge
+
   web:
     build:
       context: apps/web

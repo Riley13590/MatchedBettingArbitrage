@@ -37,3 +37,26 @@ export interface ApiUsage {
   over_soft_budget: boolean;
   over_hard_budget: boolean;
 }
+
+export interface Opportunity {
+  id: string;
+  strategy: string;
+  status: string;
+  event_id: string | null;
+  market_id: string | null;
+  detected_at: string;
+  expires_at: string | null;
+  sport: string | null;
+  competition: string | null;
+  market_family: string | null;
+  venues: string | null;
+  time_to_start_bucket: string | null;
+  expected_profit: string | null;
+  expected_roi: string | null;
+  worst_case_profit: string | null;
+  quote_age_ms_at_detection: string | null;
+  executable_stake_gbp: string | null;
+  executable_edge_gbp: string | null;
+  lifetime_ms: string | null;
+  verification_outcome: string | null;
+}

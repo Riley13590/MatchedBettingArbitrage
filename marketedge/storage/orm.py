@@ -136,6 +136,23 @@ class Opportunity(Base):
     status: Mapped[str] = mapped_column(String, nullable=False)
     snapshot: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
 
+    # --- Milestone 3: segment reporting + economics telemetry (spec §40.5, §42) ---
+    sport: Mapped[str | None] = mapped_column(String, nullable=True)
+    competition: Mapped[str | None] = mapped_column(String, nullable=True)
+    market_family: Mapped[str | None] = mapped_column(String, nullable=True)
+    venues: Mapped[str | None] = mapped_column(String, nullable=True)  # comma-separated codes
+    time_to_start_bucket: Mapped[str | None] = mapped_column(String, nullable=True)
+    quote_age_ms_at_detection: Mapped[Decimal | None] = mapped_column(Numeric(12, 2), nullable=True)
+    executable_stake_gbp: Mapped[Decimal | None] = mapped_column(Numeric(14, 2), nullable=True)
+    executable_edge_gbp: Mapped[Decimal | None] = mapped_column(Numeric(14, 2), nullable=True)
+    lifetime_ms: Mapped[Decimal | None] = mapped_column(Numeric(14, 2), nullable=True)
+
+    # --- Milestone 3: feed-validity verification (spec §41.5) ---
+    verification_outcome: Mapped[str | None] = mapped_column(String, nullable=True)
+    verified_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    verified_bookmaker_price: Mapped[Decimal | None] = mapped_column(Numeric(12, 5), nullable=True)
+    verified_exchange_price: Mapped[Decimal | None] = mapped_column(Numeric(12, 5), nullable=True)
+
 
 class Order(Base):
     __tablename__ = "orders"

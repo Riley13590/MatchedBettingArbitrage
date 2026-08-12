@@ -57,3 +57,18 @@ class QuoteRepository:
             .limit(limit)
         )
         return list(result.scalars().all())
+
+    async def latest_by_venue_and_side(
+        self, selection_id: uuid.UUID, since: datetime
+    ) -> list[QuoteRow]:
+        """One row per (venue, side) for this selection — the most recent
+        quote each venue has offered on each side, within `since`. This is
+        what the arbitrage detector needs: the best currently-executable
+        price per venue, not the full price history."""
+        result = await self._session.execute(
+            select(QuoteRow)
+            .distinct(QuoteRow.venue_id, QuoteRow.side)
+            .where(QuoteRow.selection_id == selection_id, QuoteRow.received_at >= since)
+            .order_by(QuoteRow.venue_id, QuoteRow.side, QuoteRow.received_at.desc())
+        )
+        return list(result.scalars().all())

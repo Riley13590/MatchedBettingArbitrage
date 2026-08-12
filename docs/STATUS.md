@@ -185,9 +185,111 @@ Betfair price moves don't yet trigger an out-of-cycle odds-provider poll);
 totals/handicap line extraction is best-effort (spreads take the first
 outcome's point) since the default config only enables `h2h` markets.
 
+## Milestone 3 — Arbitrage detector in paper mode + economics instrumentation: COMPLETE
+
+- `marketedge/strategies/arbitrage/dutching.py`: spec §13.1's multi-way
+  dutching, stakes rounded to money, `worst_case_profit` = minimum net
+  outcome P&L across all outcomes. Hypothesis property test proves stakes
+  equalise returns within rounding tolerance for arbitrary bankroll/odds.
+- `marketedge/strategies/arbitrage/back_lay.py`: spec §13.2's back-lay
+  hedge — deliberately implemented as two independent cash-flow functions
+  (`profit_if_selection_wins`/`profit_if_selection_loses`), with the hedge
+  stake *derived* by setting them equal and solving, not copied from the
+  spec formula. Hypothesis property test proves the two outcomes converge
+  for any valid back/lay odds and commission rate.
+- `marketedge/strategies/arbitrage/fees.py`: venue commission model
+  (bootstrap rates, explicitly flagged as unvalidated against real venue
+  statements per spec §33) — commission taxes net winnings only, never a
+  loss.
+- `marketedge/strategies/arbitrage/detector.py`: pure detection given an
+  already-fetched quote snapshot — `detect_dutching` (best BACK price per
+  outcome, any venue) and `detect_back_lay_for_selection` (bookmaker BACK
+  vs exchange LAY for one outcome). Both apply the capital solver (spec
+  §31's `capital_solver.apply_limits` — maximum bankroll every leg's
+  liquidity supports), net-of-fee worst-case profit, and every configured
+  filter (`ARBITRAGE_MIN_NET_ROI`/`MIN_PROFIT_GBP`/`MAX_QUOTE_AGE_MS`/
+  `MIN_SECONDS_TO_START`/`IN_PLAY`, spec §13.4 exact filter set) before
+  returning an opportunity.
+- `marketedge/strategies/arbitrage/runner.py`: a new `worker-strategy`
+  service scans known markets every 5 seconds, builds the latest-quote
+  snapshot per selection from Postgres, runs both detectors, persists new
+  opportunities, and — the arb-lifetime/survival-curve deliverable —
+  closes any previously-open opportunity the moment a scan cycle no longer
+  re-detects it, recording `lifetime_ms` and a best-effort feed-validity
+  classification (`PRICE_MOVED` when the market was still reachable and
+  simply stopped arbing; honestly `UNKNOWN`, not a guess, when the market
+  fell out of the scan set entirely).
+- Migration `0003`: `opportunities` gains segment fields (`sport`,
+  `competition`, `market_family`, `venues`, `time_to_start_bucket`),
+  economics fields (`quote_age_ms_at_detection`, `executable_stake_gbp`,
+  `executable_edge_gbp`, `lifetime_ms`), and feed-validity fields
+  (`verification_outcome`, `verified_at`, `verified_bookmaker_price`,
+  `verified_exchange_price`) — spec §40.5/§41.5/§42.
+- API: `GET /v1/opportunities` (real data, was a 501 stub),
+  `GET /v1/opportunities/{id}` (includes the full leg snapshot),
+  `GET /v1/opportunities/segments` — spec §40.5's segment ranking, ordered
+  by `total_executable_edge_gbp` (spec §40.4's primary commercial-
+  usefulness metric), not raw count or raw ROI.
+- Web: opportunities table showing net ROI, worst-case £, executable £
+  edge, quote age, status and observed lifetime per opportunity.
+- `docker-compose.yml`: new `worker-strategy` service running
+  `python -m marketedge.strategies.arbitrage.runner`, with no execution
+  credentials (same isolation pattern as `worker-ingest` —
+  docs/adr/003-execution-isolation.md).
+
+**Exit criteria check (spec section 28, Milestone 3):** "paper
+opportunities are mathematically reproducible with exact outcome P&L" —
+proven by `tests/replay/test_replay_arbitrage.py` (identical input snapshot
+run through the detector twice produces identical ROI/profit/leg figures)
+and by the Hypothesis property tests on the underlying dutching/back-lay
+math. "Every opportunity carries enough telemetry to determine whether it
+was economically executable, not merely theoretically profitable" — every
+persisted row carries `executable_stake_gbp`/`executable_edge_gbp`
+(liquidity-bounded, not just the theoretical bankroll figure),
+`quote_age_ms_at_detection`, and a `lifetime_ms`/`verification_outcome`
+once closed — verified end-to-end against a real Postgres in
+`tests/integration/test_arbitrage_runner.py`.
+
+**How to verify locally:**
+
+```bash
+docker compose up --build
+curl http://localhost:8000/v1/opportunities
+curl "http://localhost:8000/v1/opportunities/segments?hours=24"
+pytest tests/unit tests/replay tests/integration
+```
+
+**Tests run:** unit + Hypothesis property tests for dutching/back-lay/fees;
+unit tests for the detector against hand-built quote snapshots (arb found,
+no-arb, missing price, stale quote, liquidity-capped bankroll, below
+min-profit); replay tests proving detector determinism; integration tests
+against a real Postgres proving the runner detects, persists exactly once
+per open opportunity (no duplicate rows across scan cycles), and correctly
+closes + timestamps an opportunity once prices move. Full suite: 88 tests
+passing.
+
+**Known gaps / explicitly deferred:** no manual/secondary verification
+workflow yet (spec §41.5's `verified_bookmaker_price`/
+`verified_exchange_price`/`verified_at` columns exist but nothing populates
+them — only the automatic `PRICE_MOVED`/`UNKNOWN` classification runs);
+`MARKET_SUSPENDED`/`BAD_MAPPING`/`INSUFFICIENT_LIQUIDITY`/`STALE_FEED`
+outcomes are defined but not yet automatically assigned; fee/commission
+rates are bootstrap defaults, not validated against real venue statements
+(spec §33's data-quality gate); no arb-survival-curve dashboard (2s/5s/
+10s/30s buckets) — the raw `lifetime_ms` data needed for it is now
+recorded, but the aggregation/chart isn't built; the runner does a full
+scan every 5 seconds rather than reacting to individual quote updates,
+which is adequate at current data volumes but not the event-driven design
+spec section 31's pseudocode implies; `confidence` on every arbitrage
+opportunity is a placeholder `1.0` (arb math has no model uncertainty,
+unlike value betting where this field will carry real meaning in
+Milestone 8).
+
 ## Next milestone
 
-Milestone 3 — arbitrage detector in paper mode + economics instrumentation
-(spec section 28, M3; section 42 for the mandatory arb-economics metrics).
-Do not begin real-money execution work before the Milestone 3 discovery
-economics are in and Gate B (spec section 44) is reviewed.
+Milestone 4 — risk engine (spec section 28, M4): freshness, liquidity,
+exposure, daily limits, duplicate checks, kill switch. No execution
+capability exists yet regardless, but the risk engine is the prerequisite
+gate spec section 18 requires before Milestone 5 can add real order
+placement. Do not begin real-money execution work before Gate B (spec
+section 44 — discovery economics) is reviewed against live data.
